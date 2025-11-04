@@ -10,6 +10,8 @@ use bitcoin::{
     key::Secp256k1,
     opcodes::{OP_0, OP_TRUE, all::OP_RETURN},
     p2p::{
+        ServiceFlags,
+        address::Address,
         message_blockdata::Inventory,
         message_filter::{GetCFCheckpt, GetCFHeaders, GetCFilters},
     },
@@ -19,7 +21,9 @@ use bitcoin::{
     transaction,
 };
 
-use crate::{Instruction, Operation, Program, generators::block::Header};
+use std::net::{Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+
+use crate::{AddrRecord, Instruction, Operation, Program, generators::block::Header};
 
 /// `Compiler` is responsible for compiling IR into a sequence of low-level actions to be performed
 /// on a node (i.e. mapping `fuzzamoto_ir::Program` -> `CompiledProgram`).
@@ -128,6 +132,11 @@ struct Tx {
     output_selector: usize,
 }
 
+#[derive(Clone, Debug)]
+struct AddrList {
+    entries: Vec<(u32, Address)>,
+}
+
 struct Nop;
 
 impl Compiler {
@@ -139,6 +148,7 @@ impl Compiler {
                 | Operation::LoadConnection(..)
                 | Operation::LoadConnectionType(..)
                 | Operation::LoadDuration(..)
+                | Operation::LoadAddr { .. }
                 | Operation::LoadAmount(..)
                 | Operation::LoadTxVersion(..)
                 | Operation::LoadBlockVersion(..)
@@ -174,6 +184,12 @@ impl Compiler {
                 | Operation::AddBlockWithWitnessInv
                 | Operation::AddFilteredBlockInv => {
                     self.handle_inventory_operations(&instruction)?;
+                }
+
+                Operation::BeginBuildAddrList
+                | Operation::EndBuildAddrList
+                | Operation::AddAddr => {
+                    self.handle_addr_operations(&instruction)?;
                 }
 
                 Operation::BeginWitnessStack
@@ -214,6 +230,7 @@ impl Compiler {
                 | Operation::SendTx
                 | Operation::SendGetData
                 | Operation::SendInv
+                | Operation::SendAddr
                 | Operation::SendHeader
                 | Operation::SendBlock
                 | Operation::SendBlockNoWit
@@ -305,6 +322,57 @@ impl Compiler {
             _ => unreachable!("Non-inventory operation passed to handle_inventory_operations"),
         }
         Ok(())
+    }
+
+    fn handle_addr_operations(&mut self, instruction: &Instruction) -> Result<(), CompilerError> {
+        match &instruction.operation {
+            Operation::BeginBuildAddrList => {
+                self.append_variable(AddrList {
+                    entries: Vec::new(),
+                });
+            }
+            Operation::AddAddr => {
+                let record = self.get_input::<AddrRecord>(&instruction.inputs, 1)?;
+                let addr_tuple = self.addr_record_to_network_address(record);
+                let list = self.get_input_mut::<AddrList>(&instruction.inputs, 0)?;
+                list.entries.push(addr_tuple);
+            }
+            Operation::EndBuildAddrList => {
+                let list = self.get_input::<AddrList>(&instruction.inputs, 0)?;
+                self.append_variable(list.entries.clone());
+            }
+            _ => unreachable!("Non-address operation passed to handle_addr_operations"),
+        }
+        Ok(())
+    }
+
+    fn addr_record_to_network_address(&self, record: &AddrRecord) -> (u32, Address) {
+        let ipv6 = Ipv6Addr::from(record.ip);
+        let socket = if let Some(ipv4) = ipv6.to_ipv4() {
+            SocketAddr::V4(SocketAddrV4::new(ipv4, record.port))
+        } else {
+            SocketAddr::V6(SocketAddrV6::new(ipv6, record.port, 0, 0))
+        };
+        let services = self.service_flags_from_bits(record.services);
+        (record.time, Address::new(&socket, services))
+    }
+
+    fn service_flags_from_bits(&self, bits: u64) -> ServiceFlags {
+        let mut flags = ServiceFlags::NONE;
+        for candidate in [
+            ServiceFlags::NETWORK,
+            ServiceFlags::GETUTXO,
+            ServiceFlags::BLOOM,
+            ServiceFlags::WITNESS,
+            ServiceFlags::COMPACT_FILTERS,
+            ServiceFlags::NETWORK_LIMITED,
+            ServiceFlags::P2P_V2,
+        ] {
+            if bits & candidate.to_u64() != 0 {
+                flags.add(candidate);
+            }
+        }
+        flags
     }
 
     fn handle_witness_operations(
@@ -585,6 +653,12 @@ impl Compiler {
                     bitcoin::consensus::encode::serialize(&inv_var),
                 );
             }
+            Operation::SendAddr => {
+                let connection_var = self.get_input::<usize>(&instruction.inputs, 0)?;
+                let addr_var = self.get_input::<Vec<(u32, Address)>>(&instruction.inputs, 1)?;
+                let payload = bitcoin::consensus::encode::serialize(addr_var);
+                self.emit_send_raw_message(*connection_var, "addr", payload);
+            }
             Operation::SendHeader => {
                 let connection_var = self.get_input::<usize>(&instruction.inputs, 0)?;
                 let header_var = self.get_input::<Header>(&instruction.inputs, 1)?;
@@ -679,6 +753,7 @@ impl Compiler {
                 self.handle_load_operation(connection_type.clone())
             }
             Operation::LoadDuration(duration) => self.handle_load_operation(*duration),
+            Operation::LoadAddr(addr) => self.handle_load_operation(addr.clone()),
             Operation::LoadAmount(amount) => self.handle_load_operation(*amount),
             Operation::LoadTxVersion(version) => self.handle_load_operation(*version),
             Operation::LoadBlockVersion(version) => self.handle_load_operation(*version),

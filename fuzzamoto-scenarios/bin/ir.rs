@@ -1,10 +1,12 @@
 #[cfg(any(feature = "oracle_netsplit", feature = "oracle_consensus"))]
 use std::time::{Duration, Instant};
+use std::{collections::HashSet, net::SocketAddr};
 
 #[cfg(feature = "nyx")]
 use fuzzamoto_nyx_sys::*;
 
 use bitcoin::hashes::Hash;
+use bitcoin::p2p::ServiceFlags;
 use fuzzamoto::{
     connections::Transport,
     fuzzamoto_main,
@@ -119,16 +121,65 @@ where
             .collect()
     }
 
+    fn build_addresses(inner: &GenericScenario<TX, T>) -> Vec<fuzzamoto_ir::AddrRecord> {
+        let mut uniq = HashSet::new();
+        let mut records = Vec::new();
+        let time = inner.time.min(u32::MAX as u64) as u32;
+        let services = (ServiceFlags::NETWORK | ServiceFlags::WITNESS).to_u64();
+
+        let mut push_addr = |sock: SocketAddr| {
+            let record = Self::addr_record_from_socket(sock, time, services);
+            if uniq.insert(record.clone()) {
+                records.push(record);
+            }
+        };
+
+        for connection in &inner.connections {
+            if let Ok(peer) = connection.peer_addr() {
+                push_addr(peer);
+            }
+            if let Ok(local) = connection.local_addr() {
+                push_addr(local);
+            }
+        }
+
+        if let Some(addr) = inner.target.get_addr() {
+            push_addr(SocketAddr::V4(addr));
+        }
+
+        records
+    }
+
+    fn addr_record_from_socket(
+        socket: SocketAddr,
+        time: u32,
+        services: u64,
+    ) -> fuzzamoto_ir::AddrRecord {
+        let ip = match socket {
+            SocketAddr::V4(v4) => v4.ip().to_ipv6_mapped().octets(),
+            SocketAddr::V6(v6) => v6.ip().octets(),
+        };
+
+        fuzzamoto_ir::AddrRecord {
+            time,
+            services,
+            ip,
+            port: socket.port(),
+        }
+    }
+
     /// Dump the full program context either to Nyx host or to a file
     fn dump_context(
         context: ProgramContext,
         txos: Vec<fuzzamoto_ir::Txo>,
         headers: Vec<fuzzamoto_ir::Header>,
+        addresses: Vec<fuzzamoto_ir::AddrRecord>,
     ) -> Result<(), String> {
         let full_context = postcard::to_allocvec(&fuzzamoto_ir::FullProgramContext {
             context,
             txos,
             headers,
+            addresses,
         })
         .map_err(|e| e.to_string())?;
 
@@ -282,8 +333,9 @@ where
 
         let txos = Self::build_txos(&inner);
         let headers = Self::build_headers(&inner);
+        let addresses = Self::build_addresses(&inner);
 
-        Self::dump_context(context, txos, headers)?;
+        Self::dump_context(context, txos, headers, addresses)?;
 
         #[cfg(any(feature = "oracle_netsplit", feature = "oracle_consensus"))]
         let second = Self::create_and_sync_second_target(args, &inner.target)?;

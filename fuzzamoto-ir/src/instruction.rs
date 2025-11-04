@@ -37,6 +37,7 @@ impl Instruction {
             | Operation::LoadConnectionType(_)
             //| Operation::LoadCompactFilterType(_)
             | Operation::LoadDuration(_)
+            | Operation::LoadAddr { .. }
             | Operation::LoadTime(_)
             | Operation::LoadSize(_)
             | Operation::LoadPrivateKey(_)
@@ -67,6 +68,7 @@ impl Instruction {
             | Operation::LoadConnection(_)
             | Operation::LoadConnectionType(_)
             | Operation::LoadDuration(_)
+            | Operation::LoadAddr { .. }
             | Operation::LoadBlockHeight(_)
             | Operation::LoadCompactFilterType(_)
             | Operation::SendRawMessage
@@ -103,10 +105,12 @@ impl Instruction {
             | Operation::AddBlockInv
             | Operation::AddBlockWithWitnessInv
             | Operation::AddFilteredBlockInv
+            | Operation::AddAddr
             | Operation::BuildBlock
             | Operation::AddTx
             | Operation::SendGetData
             | Operation::SendInv
+            | Operation::SendAddr
             | Operation::SendHeader
             | Operation::SendBlock
             | Operation::SendBlockNoWit
@@ -125,6 +129,8 @@ impl Instruction {
             | Operation::BeginWitnessStack
             | Operation::BeginBuildInventory
             | Operation::EndBuildInventory
+            | Operation::BeginBuildAddrList
+            | Operation::EndBuildAddrList
             | Operation::EndWitnessStack
             | Operation::EndBlockTransactions
             | Operation::BeginBlockTransactions => false,
@@ -141,6 +147,7 @@ impl Instruction {
                 Operation::BeginBuildTxOutputs => Some(InstructionContext::BuildTxOutputs),
                 Operation::BeginWitnessStack => Some(InstructionContext::WitnessStack),
                 Operation::BeginBuildInventory => Some(InstructionContext::Inventory),
+                Operation::BeginBuildAddrList => Some(InstructionContext::AddrList),
                 Operation::BeginBlockTransactions => Some(InstructionContext::BlockTransactions),
                 _ => unimplemented!("Every block begin enters a context"),
             };
@@ -168,5 +175,6 @@ pub enum InstructionContext {
     BuildTxOutputs,
     WitnessStack,
     Inventory,
+    AddrList,
     BlockTransactions,
 }

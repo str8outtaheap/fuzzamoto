@@ -1,8 +1,8 @@
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, process, rc::Rc, time::Duration};
 
 use fuzzamoto_ir::{
-    AddTxToBlockGenerator, AdvanceTimeGenerator, BlockGenerator, CombineMutator,
-    CompactFilterQueryGenerator, GetDataGenerator, HeaderGenerator, InputMutator,
+    AddTxToBlockGenerator, AddrRelayGenerator, AdvanceTimeGenerator, BlockGenerator,
+    CombineMutator, CompactFilterQueryGenerator, GetDataGenerator, HeaderGenerator, InputMutator,
     InventoryGenerator, LargeTxGenerator, LongChainGenerator, OneParentOneChildGenerator,
     OperationMutator, Program, SendBlockGenerator, SendMessageGenerator, SingleTxGenerator,
     TxoGenerator, WitnessGenerator, cutting::CuttingMinimizer, instr_block::InstrBlockMinimizer,
@@ -266,6 +266,10 @@ where
                 ),
                 IrGenerator::new(WitnessGenerator::new(), rng.clone()),
                 IrGenerator::new(InventoryGenerator::default(), rng.clone()),
+                IrGenerator::new(
+                    AddrRelayGenerator::new(full_program_context.addresses.clone()),
+                    rng.clone()
+                ),
                 IrGenerator::new(GetDataGenerator::default(), rng.clone()),
                 IrGenerator::new(BlockGenerator::default(), rng.clone()),
                 IrGenerator::new(
@@ -278,9 +282,11 @@ where
             ),
         );
 
+        // TODO: Consider pairing each mutator/generator with its weight directly so we don't have
+        //       to keep this table in sync manually.
         let weights = &[
             2000f32, 1000.0, 100.0, 10.0, 40.0, 50.0, 50.0, 50.0, 50.0, 20.0, 20.0, 20.0, 20.0,
-            50.0, 50.0, 50.0, 50.0, 10.0,
+            20.0, 50.0, 50.0, 50.0, 50.0, 10.0,
         ];
         let sum = weights.iter().sum::<f32>();
         assert_eq!(mutator.mutations().len(), weights.len());

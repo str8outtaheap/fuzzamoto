@@ -1,3 +1,4 @@
+pub mod address;
 pub mod advance_time;
 pub mod block;
 pub mod compact_filters;
@@ -7,6 +8,7 @@ pub mod tx;
 pub mod txo;
 pub mod witness;
 
+pub use address::*;
 pub use advance_time::*;
 pub use block::*;
 pub use compact_filters::*;

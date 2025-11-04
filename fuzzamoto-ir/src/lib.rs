@@ -57,6 +57,16 @@ pub struct FullProgramContext {
     pub txos: Vec<Txo>,
     /// List of headers present in the snapshotted state
     pub headers: Vec<Header>,
+    /// Addresses that can be relayed to peers
+    pub addresses: Vec<AddrRecord>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AddrRecord {
+    pub time: u32,
+    pub services: u64,
+    pub ip: [u8; 16],
+    pub port: u16,
 }
 
 impl Program {
