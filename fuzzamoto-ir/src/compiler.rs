@@ -1120,3 +1120,70 @@ impl Compiler {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ProgramBuilder, ProgramContext};
+
+    #[test]
+    fn compile_send_addr_emits_addr_message() {
+        let context = ProgramContext {
+            num_nodes: 1,
+            num_connections: 1,
+            timestamp: 0,
+        };
+
+        let mut builder = ProgramBuilder::new(context.clone());
+
+        let conn_var = builder.force_append_expect_output(vec![], Operation::LoadConnection(0));
+        let mut_list = builder.force_append_expect_output(vec![], Operation::BeginBuildAddrList);
+
+        let addr = AddrRecord {
+            time: 42,
+            services: (ServiceFlags::NETWORK | ServiceFlags::WITNESS).to_u64(),
+            ip: [0u8; 16],
+            port: 8333,
+        };
+
+        let addr_var =
+            builder.force_append_expect_output(vec![], Operation::LoadAddr(addr.clone()));
+        builder.force_append(vec![mut_list.index, addr_var.index], Operation::AddAddr);
+        let addr_list =
+            builder.force_append_expect_output(vec![mut_list.index], Operation::EndBuildAddrList);
+        builder.force_append(vec![conn_var.index, addr_list.index], Operation::SendAddr);
+
+        let program = builder.finalize().unwrap();
+
+        let mut compiler = Compiler::new();
+        let compiled = compiler
+            .compile(&program)
+            .expect("failed to compile program");
+
+        assert_eq!(compiled.actions.len(), 1);
+        match &compiled.actions[0] {
+            CompiledAction::SendRawMessage(conn, command, payload) => {
+                assert_eq!(*conn, 0);
+                assert_eq!(command, "addr");
+
+                let compiled_address = {
+                    let ipv6 = Ipv6Addr::from(addr.ip);
+                    let socket = if let Some(ipv4) = ipv6.to_ipv4() {
+                        SocketAddr::V4(SocketAddrV4::new(ipv4, addr.port))
+                    } else {
+                        SocketAddr::V6(SocketAddrV6::new(ipv6, addr.port, 0, 0))
+                    };
+                    let mut services = ServiceFlags::NONE;
+                    services.add(ServiceFlags::NETWORK);
+                    services.add(ServiceFlags::WITNESS);
+                    (addr.time, Address::new(&socket, services))
+                };
+
+                let expected_bytes =
+                    bitcoin::consensus::encode::serialize(&vec![compiled_address]);
+                assert_eq!(*payload, expected_bytes);
+            }
+            other => panic!("unexpected action {:?}", other),
+        }
+    }
+}
