@@ -18,6 +18,8 @@ impl Instruction {
             | Operation::EndBuildTxOutputs
             | Operation::BeginBuildInventory
             | Operation::EndBuildInventory
+            | Operation::EndBuildAddrList
+            | Operation::EndBuildAddrListV2
             | Operation::BeginBlockTransactions
             | Operation::EndBlockTransactions
             | Operation::TakeTxo => false,
@@ -37,7 +39,7 @@ impl Instruction {
             | Operation::LoadConnectionType(_)
             //| Operation::LoadCompactFilterType(_)
             | Operation::LoadDuration(_)
-            | Operation::LoadAddr { .. }
+            | Operation::LoadAddr(_)
             | Operation::LoadTime(_)
             | Operation::LoadSize(_)
             | Operation::LoadPrivateKey(_)
@@ -55,6 +57,7 @@ impl Instruction {
             | Operation::AddFilteredBlockInv
             | Operation::SendTxNoWit
             | Operation::SendTx
+            | Operation::AddAddrV2
             | Operation::LoadBytes(_) => true,
             _ => false,
         }
@@ -68,7 +71,7 @@ impl Instruction {
             | Operation::LoadConnection(_)
             | Operation::LoadConnectionType(_)
             | Operation::LoadDuration(_)
-            | Operation::LoadAddr { .. }
+            | Operation::LoadAddr(_)
             | Operation::LoadBlockHeight(_)
             | Operation::LoadCompactFilterType(_)
             | Operation::SendRawMessage
@@ -106,11 +109,13 @@ impl Instruction {
             | Operation::AddBlockWithWitnessInv
             | Operation::AddFilteredBlockInv
             | Operation::AddAddr
+            | Operation::AddAddrV2
             | Operation::BuildBlock
             | Operation::AddTx
             | Operation::SendGetData
             | Operation::SendInv
             | Operation::SendAddr
+            | Operation::SendAddrV2
             | Operation::SendHeader
             | Operation::SendBlock
             | Operation::SendBlockNoWit
@@ -131,6 +136,8 @@ impl Instruction {
             | Operation::EndBuildInventory
             | Operation::BeginBuildAddrList
             | Operation::EndBuildAddrList
+            | Operation::BeginBuildAddrListV2
+            | Operation::EndBuildAddrListV2
             | Operation::EndWitnessStack
             | Operation::EndBlockTransactions
             | Operation::BeginBlockTransactions => false,
@@ -148,6 +155,7 @@ impl Instruction {
                 Operation::BeginWitnessStack => Some(InstructionContext::WitnessStack),
                 Operation::BeginBuildInventory => Some(InstructionContext::Inventory),
                 Operation::BeginBuildAddrList => Some(InstructionContext::AddrList),
+                Operation::BeginBuildAddrListV2 => Some(InstructionContext::AddrListV2),
                 Operation::BeginBlockTransactions => Some(InstructionContext::BlockTransactions),
                 _ => unimplemented!("Every block begin enters a context"),
             };
@@ -176,5 +184,6 @@ pub enum InstructionContext {
     WitnessStack,
     Inventory,
     AddrList,
+    AddrListV2,
     BlockTransactions,
 }

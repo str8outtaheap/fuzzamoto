@@ -22,7 +22,7 @@ use fuzzamoto::oracles::{NetSplitContext, NetSplitOracle};
 use fuzzamoto::oracles::{ConsensusContext, ConsensusOracle};
 
 use fuzzamoto_ir::{
-    Program, ProgramContext,
+    AddrNetwork, Program, ProgramContext,
     compiler::{CompiledAction, CompiledProgram, Compiler},
 };
 
@@ -128,9 +128,10 @@ where
         let services = (ServiceFlags::NETWORK | ServiceFlags::WITNESS).to_u64();
 
         let mut push_addr = |sock: SocketAddr| {
-            let record = Self::addr_record_from_socket(sock, time, services);
-            if uniq.insert(record.clone()) {
-                records.push(record);
+            for record in Self::addr_records_from_socket(sock, time, services) {
+                if uniq.insert(record.clone()) {
+                    records.push(record);
+                }
             }
         };
 
@@ -150,22 +151,47 @@ where
         records
     }
 
-    fn addr_record_from_socket(
+    fn addr_records_from_socket(
         socket: SocketAddr,
         time: u32,
         services: u64,
-    ) -> fuzzamoto_ir::AddrRecord {
-        let ip = match socket {
+    ) -> Vec<fuzzamoto_ir::AddrRecord> {
+        let mut records = Vec::new();
+
+        let ipv6_mapped = match socket {
             SocketAddr::V4(v4) => v4.ip().to_ipv6_mapped().octets(),
             SocketAddr::V6(v6) => v6.ip().octets(),
         };
 
-        fuzzamoto_ir::AddrRecord {
+        records.push(fuzzamoto_ir::AddrRecord::V1 {
             time,
             services,
-            ip,
+            ip: ipv6_mapped,
             port: socket.port(),
+        });
+
+        match socket {
+            SocketAddr::V4(v4) => {
+                records.push(fuzzamoto_ir::AddrRecord::V2 {
+                    time,
+                    services,
+                    network: AddrNetwork::IPv4,
+                    payload: v4.ip().octets().to_vec(),
+                    port: v4.port(),
+                });
+            }
+            SocketAddr::V6(v6) => {
+                records.push(fuzzamoto_ir::AddrRecord::V2 {
+                    time,
+                    services,
+                    network: AddrNetwork::IPv6,
+                    payload: v6.ip().octets().to_vec(),
+                    port: v6.port(),
+                });
+            }
         }
+
+        records
     }
 
     /// Dump the full program context either to Nyx host or to a file
