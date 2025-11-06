@@ -23,7 +23,8 @@ impl IrCommand {
                 iterations,
                 programs,
                 context,
-            } => generate_ir(output, *iterations, *programs, context),
+                generators,
+            } => generate_ir(output, *iterations, *programs, context, generators),
             IRCommands::Compile { input, output } => compile_ir(input, output),
             IRCommands::Print { input, json } => print_ir(input, *json),
             IRCommands::Convert {
@@ -52,6 +53,14 @@ pub enum IRCommands {
         programs: usize,
         #[arg(long, help = "Path to the program context file")]
         context: PathBuf,
+        #[arg(
+            long,
+            value_enum,
+            value_delimiter = ',',
+            num_args = 1..,
+            help = "Optional comma-separated list of generators to enable (defaults to all)"
+        )]
+        generators: Option<Vec<IrGeneratorChoice>>,
     },
     /// Compile fuzzamoto IR
     Compile {
@@ -95,26 +104,44 @@ pub enum CorpusFormat {
     Postcard, // Default corpus format (https://github.com/jamesmunns/postcard)
 }
 
+#[derive(ValueEnum, Debug, Clone)]
+pub enum IrGeneratorChoice {
+    #[value(alias = "advance-time")]
+    AdvanceTime,
+    #[value(alias = "header")]
+    Header,
+    #[value(alias = "addrrelay", alias = "addr")]
+    AddrRelay,
+    #[value(alias = "addrrelayv2", alias = "addrv2")]
+    AddrRelayV2,
+    #[value(alias = "block")]
+    Block,
+}
+
 pub fn generate_ir(
     output: &PathBuf,
     iterations: usize,
     programs: usize,
     context: &PathBuf,
+    generators: &Option<Vec<IrGeneratorChoice>>,
 ) -> Result<()> {
     let context = std::fs::read(context.clone())?;
     let context: FullProgramContext = postcard::from_bytes(&context)?;
 
     let mut rng = rand::thread_rng();
-    let generators: Vec<Box<dyn Generator<ThreadRng>>> = vec![
-        //Box::new(SendMessageGenerator::default()),
-        Box::new(AdvanceTimeGenerator::default()),
-        //Box::new(TxoGenerator::new(context.txos.clone())),
-        //Box::new(SingleTxGenerator),
-        Box::new(HeaderGenerator::new(context.headers.clone())),
-        Box::new(AddrRelayGenerator::new(context.addresses.clone())),
-        Box::new(AddrRelayV2Generator::new(context.addresses.clone())),
-        Box::new(BlockGenerator::default()),
-    ];
+    let generators: Vec<Box<dyn Generator<ThreadRng>>> = match generators {
+        Some(selected) => selected
+            .iter()
+            .map(|choice| instantiate_generator(choice, &context))
+            .collect(),
+        None => default_generators(&context),
+    };
+
+    if generators.is_empty() {
+        return Err(CliError::InvalidInput(
+            "No generators selected; pass at least one or omit --generators".to_string(),
+        ));
+    }
 
     for _ in 0..programs {
         let mut program = Program::unchecked_new(context.context.clone(), vec![]);
@@ -168,6 +195,33 @@ pub fn generate_ir(
     }
 
     Ok(())
+}
+
+fn default_generators(context: &FullProgramContext) -> Vec<Box<dyn Generator<ThreadRng>>> {
+    vec![
+        Box::new(AdvanceTimeGenerator::default()),
+        Box::new(HeaderGenerator::new(context.headers.clone())),
+        Box::new(AddrRelayGenerator::new(context.addresses.clone())),
+        Box::new(AddrRelayV2Generator::new(context.addresses.clone())),
+        Box::new(BlockGenerator::default()),
+    ]
+}
+
+fn instantiate_generator(
+    choice: &IrGeneratorChoice,
+    context: &FullProgramContext,
+) -> Box<dyn Generator<ThreadRng>> {
+    match choice {
+        IrGeneratorChoice::AdvanceTime => Box::new(AdvanceTimeGenerator::default()),
+        IrGeneratorChoice::Header => Box::new(HeaderGenerator::new(context.headers.clone())),
+        IrGeneratorChoice::AddrRelay => {
+            Box::new(AddrRelayGenerator::new(context.addresses.clone()))
+        }
+        IrGeneratorChoice::AddrRelayV2 => {
+            Box::new(AddrRelayV2Generator::new(context.addresses.clone()))
+        }
+        IrGeneratorChoice::Block => Box::new(BlockGenerator::default()),
+    }
 }
 
 fn compile_ir_file(input: &PathBuf, output: &PathBuf) -> Result<()> {
