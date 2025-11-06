@@ -238,6 +238,7 @@ impl Compiler {
                 | Operation::SendTx
                 | Operation::SendGetData
                 | Operation::SendInv
+                | Operation::SendGetAddr
                 | Operation::SendAddr
                 | Operation::SendAddrV2
                 | Operation::SendHeader
@@ -772,6 +773,10 @@ impl Compiler {
                     bitcoin::consensus::encode::serialize(&inv_var),
                 );
             }
+            Operation::SendGetAddr => {
+                let connection_var = self.get_input::<usize>(&instruction.inputs, 0)?;
+                self.emit_send_raw_message(*connection_var, "getaddr", vec![]);
+            }
             Operation::SendAddr => {
                 let connection_var = self.get_input::<usize>(&instruction.inputs, 0)?;
                 let addr_var = self.get_input::<Vec<(u32, Address)>>(&instruction.inputs, 1)?;
@@ -1250,6 +1255,36 @@ impl Compiler {
 mod tests {
     use super::*;
     use crate::{ProgramBuilder, ProgramContext};
+
+    #[test]
+    fn compile_send_getaddr_emits_getaddr_message() {
+        let context = ProgramContext {
+            num_nodes: 1,
+            num_connections: 1,
+            timestamp: 0,
+        };
+
+        let mut builder = ProgramBuilder::new(context.clone());
+        let conn_var = builder.force_append_expect_output(vec![], Operation::LoadConnection(0));
+        builder.force_append(vec![conn_var.index], Operation::SendGetAddr);
+
+        let program = builder.finalize().unwrap();
+
+        let mut compiler = Compiler::new();
+        let compiled = compiler
+            .compile(&program)
+            .expect("failed to compile program");
+
+        assert_eq!(compiled.actions.len(), 1);
+        match &compiled.actions[0] {
+            CompiledAction::SendRawMessage(conn, command, payload) => {
+                assert_eq!(*conn, 0);
+                assert_eq!(command, "getaddr");
+                assert!(payload.is_empty());
+            }
+            other => panic!("unexpected action {:?}", other),
+        }
+    }
 
     #[test]
     fn compile_send_addr_emits_addr_message() {

@@ -108,6 +108,7 @@ pub enum Operation {
     /// Message sending
     SendGetData,
     SendInv,
+    SendGetAddr,
     SendAddr,
     SendAddrV2,
     SendTx,
@@ -271,6 +272,7 @@ impl fmt::Display for Operation {
 
             Operation::SendGetData => write!(f, "SendGetData"),
             Operation::SendInv => write!(f, "SendInv"),
+            Operation::SendGetAddr => write!(f, "SendGetAddr"),
             Operation::SendAddr => write!(f, "SendAddr"),
             Operation::SendAddrV2 => write!(f, "SendAddrV2"),
             Operation::SendTx => write!(f, "SendTx"),
@@ -370,6 +372,7 @@ impl Operation {
             | Operation::AddAddrV2
             | Operation::SendGetData
             | Operation::SendInv
+            | Operation::SendGetAddr
             | Operation::SendAddr
             | Operation::SendAddrV2
             | Operation::AddTxInput
@@ -483,6 +486,7 @@ impl Operation {
             | Operation::BeginBlockTransactions
             | Operation::SendGetData
             | Operation::SendInv
+            | Operation::SendGetAddr
             | Operation::SendAddr
             | Operation::SendAddrV2
             | Operation::SendTx
@@ -608,6 +612,7 @@ impl Operation {
             Operation::SendTxNoWit => vec![],
             Operation::SendGetData => vec![],
             Operation::SendInv => vec![],
+            Operation::SendGetAddr => vec![],
             Operation::SendAddr => vec![],
             Operation::SendAddrV2 => vec![],
             Operation::SendHeader => vec![],
@@ -687,6 +692,7 @@ impl Operation {
             Operation::SendGetData | Operation::SendInv => {
                 vec![Variable::Connection, Variable::ConstInventory]
             }
+            Operation::SendGetAddr => vec![Variable::Connection],
             Operation::SendAddr => vec![Variable::Connection, Variable::ConstAddrList],
             Operation::SendAddrV2 => vec![Variable::Connection, Variable::ConstAddrListV2],
             Operation::SendHeader => vec![Variable::Connection, Variable::Header],
@@ -813,6 +819,7 @@ impl Operation {
             | Operation::EndBlockTransactions
             | Operation::SendGetData
             | Operation::SendInv
+            | Operation::SendGetAddr
             | Operation::SendAddr
             | Operation::SendAddrV2
             | Operation::SendTx

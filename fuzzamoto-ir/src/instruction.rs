@@ -113,6 +113,7 @@ impl Instruction {
             | Operation::BuildBlock
             | Operation::AddTx
             | Operation::SendGetData
+            | Operation::SendGetAddr
             | Operation::SendInv
             | Operation::SendAddr
             | Operation::SendAddrV2

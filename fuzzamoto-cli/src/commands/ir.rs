@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use fuzzamoto_ir::compiler::Compiler;
 use fuzzamoto_ir::{
     AddrRelayGenerator, AddrRelayV2Generator, AdvanceTimeGenerator, BlockGenerator,
-    FullProgramContext, Generator, HeaderGenerator, InstructionContext, Program, ProgramBuilder,
+    FullProgramContext, Generator, GetAddrGenerator, HeaderGenerator, InstructionContext, Program,
+    ProgramBuilder,
 };
 
 use rand::Rng;
@@ -114,6 +115,8 @@ pub enum IrGeneratorChoice {
     AddrRelay,
     #[value(alias = "addrrelayv2", alias = "addrv2")]
     AddrRelayV2,
+    #[value(alias = "getaddr")]
+    GetAddr,
     #[value(alias = "block")]
     Block,
 }
@@ -203,6 +206,7 @@ fn default_generators(context: &FullProgramContext) -> Vec<Box<dyn Generator<Thr
         Box::new(HeaderGenerator::new(context.headers.clone())),
         Box::new(AddrRelayGenerator::new(context.addresses.clone())),
         Box::new(AddrRelayV2Generator::new(context.addresses.clone())),
+        Box::new(GetAddrGenerator::default()),
         Box::new(BlockGenerator::default()),
     ]
 }
@@ -220,6 +224,7 @@ fn instantiate_generator(
         IrGeneratorChoice::AddrRelayV2 => {
             Box::new(AddrRelayV2Generator::new(context.addresses.clone()))
         }
+        IrGeneratorChoice::GetAddr => Box::new(GetAddrGenerator::default()),
         IrGeneratorChoice::Block => Box::new(BlockGenerator::default()),
     }
 }
