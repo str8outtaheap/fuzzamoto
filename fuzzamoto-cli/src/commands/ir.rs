@@ -1,5 +1,5 @@
 use clap::{Subcommand, ValueEnum};
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use fuzzamoto_ir::compiler::Compiler;
 use fuzzamoto_ir::{
@@ -13,6 +13,38 @@ use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 
 use crate::error::{CliError, Result};
+
+#[derive(serde::Deserialize)]
+struct StoredIrInput {
+    ir: Program,
+    #[serde(default)]
+    trace: Vec<StoredMutationTraceEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct StoredMutationTraceEntry {
+    stage: StoredMutationStage,
+    name: String,
+    #[serde(default)]
+    detail: Option<String>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+enum StoredMutationStage {
+    Mutator,
+    Generator,
+    Splice,
+}
+
+impl fmt::Display for StoredMutationStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StoredMutationStage::Mutator => write!(f, "mutator"),
+            StoredMutationStage::Generator => write!(f, "generator"),
+            StoredMutationStage::Splice => write!(f, "splice"),
+        }
+    }
+}
 
 pub struct IrCommand;
 
@@ -35,6 +67,7 @@ impl IrCommand {
                 output,
             } => convert_ir(from, to, input, output),
             IRCommands::Analyze { input } => analyze_ir(input),
+            IRCommands::Trace { input, quiet } => trace_ir(input, *quiet),
         }
     }
 }
@@ -96,6 +129,17 @@ pub enum IRCommands {
     Analyze {
         #[arg(help = "Path to the input IR directory to analyze")]
         input: PathBuf,
+    },
+    /// Show mutation trace information stored in an IR input
+    Trace {
+        #[arg(help = "Path to the input IR file (.ir) to inspect")]
+        input: PathBuf,
+        #[arg(
+            long,
+            help = "Skip printing the IR program body",
+            default_value_t = false
+        )]
+        quiet: bool,
     },
 }
 
@@ -285,6 +329,48 @@ pub fn print_ir(input: &PathBuf, json: bool) -> Result<()> {
         println!("{}", program);
     }
     Ok(())
+}
+
+pub fn trace_ir(input: &PathBuf, quiet: bool) -> Result<()> {
+    let bytes = std::fs::read(input)?;
+    match postcard::from_bytes::<StoredIrInput>(&bytes) {
+        Ok(ir_input) => {
+            if ir_input.trace.is_empty() {
+                println!("No mutation trace entries recorded.");
+            } else {
+                println!(
+                    "Mutation trace ({} entr{}):",
+                    ir_input.trace.len(),
+                    if ir_input.trace.len() == 1 {
+                        "y"
+                    } else {
+                        "ies"
+                    }
+                );
+                for (idx, entry) in ir_input.trace.iter().enumerate() {
+                    match &entry.detail {
+                        Some(detail) => println!(
+                            "[{:02}] {:<9} {:<24} {}",
+                            idx, entry.stage, entry.name, detail
+                        ),
+                        None => println!("[{:02}] {:<9} {}", idx, entry.stage, entry.name),
+                    }
+                }
+            }
+            if !quiet {
+                println!("\n{}", ir_input.ir);
+            }
+            Ok(())
+        }
+        Err(_) => {
+            let program: Program = postcard::from_bytes(&bytes)?;
+            println!("Input does not contain mutation trace metadata.");
+            if !quiet {
+                println!("{}", program);
+            }
+            Ok(())
+        }
+    }
 }
 
 fn convert_ir_dir(
