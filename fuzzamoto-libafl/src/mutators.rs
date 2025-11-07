@@ -16,7 +16,7 @@ use libafl_bolts::{
 };
 use rand::RngCore;
 
-use crate::input::IrInput;
+use crate::input::{IrInput, MutationStage};
 
 /// Instruction limit for mutated IR programs
 const MAX_INSTRUCTIONS: usize = 4096;
@@ -49,10 +49,15 @@ where
     M: fuzzamoto_ir::Mutator<R>,
 {
     fn mutate(&mut self, _state: &mut S, input: &mut IrInput) -> Result<MutationResult, Error> {
-        Ok(match self.mutator.mutate(input.ir_mut(), &mut self.rng) {
-            Ok(_) => MutationResult::Mutated,
+        let result = match self.mutator.mutate(input.ir_mut(), &mut self.rng) {
+            Ok(_) => {
+                input.record_trace(MutationStage::Mutator, self.name.to_string(), None);
+                MutationResult::Mutated
+            }
             _ => MutationResult::Skipped,
-        })
+        };
+
+        Ok(result)
     }
 
     #[inline]
@@ -125,6 +130,7 @@ where
         }
 
         *input = input_clone;
+        input.record_trace(MutationStage::Splice, self.name.to_string(), None);
 
         Ok(MutationResult::Mutated)
     }
@@ -210,6 +216,7 @@ where
         }
 
         *input.ir_mut() = new_program;
+        input.record_trace(MutationStage::Generator, self.name.to_string(), None);
 
         Ok(MutationResult::Mutated)
     }
