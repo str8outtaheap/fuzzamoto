@@ -7,7 +7,10 @@ use rand::{RngCore, seq::IteratorRandom};
 /// variable of the same type.
 ///
 /// Only instructions for which `is_input_mutable` returns true are considered.
-pub struct InputMutator;
+pub struct InputMutator {
+    #[cfg(feature = "mutation-trace")]
+    last_action: Option<String>,
+}
 
 impl<R: RngCore> Mutator<R> for InputMutator {
     fn mutate(&mut self, program: &mut Program, rng: &mut R) -> MutatorResult {
@@ -47,7 +50,18 @@ impl<R: RngCore> Mutator<R> for InputMutator {
                 return Err(MutatorError::NoMutationsAvailable);
             }
 
-            program.instructions[candidate_instruction.0].inputs[candidate_input.0] = new_var.index;
+            let instr_idx = candidate_instruction.0;
+            let input_idx = candidate_input.0;
+            program.instructions[instr_idx].inputs[input_idx] = new_var.index;
+            #[cfg(feature = "mutation-trace")]
+            {
+                self.last_action = Some(format!(
+                    "instr {} input {}: v{} -> v{}",
+                    instr_idx, input_idx, current_variable.index, new_var.index
+                ));
+            }
+        } else {
+            return Err(MutatorError::NoMutationsAvailable);
         }
 
         Ok(())
@@ -56,10 +70,18 @@ impl<R: RngCore> Mutator<R> for InputMutator {
     fn name(&self) -> &'static str {
         "InputMutator"
     }
+
+    #[cfg(feature = "mutation-trace")]
+    fn take_last_action(&mut self) -> Option<String> {
+        self.last_action.take()
+    }
 }
 
 impl InputMutator {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            #[cfg(feature = "mutation-trace")]
+            last_action: None,
+        }
     }
 }

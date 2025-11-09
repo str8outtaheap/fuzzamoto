@@ -26,7 +26,7 @@ struct StoredMutationTraceEntry {
     stage: StoredMutationStage,
     name: String,
     #[serde(default)]
-    detail: Option<String>,
+    action: Option<String>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -348,10 +348,10 @@ pub fn trace_ir(input: &PathBuf, quiet: bool) -> Result<()> {
                     }
                 );
                 for (idx, entry) in ir_input.trace.iter().enumerate() {
-                    match &entry.detail {
-                        Some(detail) => println!(
+                    match &entry.action {
+                        Some(action) => println!(
                             "[{:02}] {:<9} {:<24} {}",
-                            idx, entry.stage, entry.name, detail
+                            idx, entry.stage, entry.name, action
                         ),
                         None => println!("[{:02}] {:<9} {}", idx, entry.stage, entry.name),
                     }

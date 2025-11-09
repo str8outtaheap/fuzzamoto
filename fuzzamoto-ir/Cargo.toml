@@ -11,6 +11,7 @@ fuzz = ["reduced_pow"]
 reproduce = ["reduced_pow"]
 
 reduced_pow = []
+mutation-trace = []
 
 [dependencies]
 fuzzamoto = { path = "../fuzzamoto" }

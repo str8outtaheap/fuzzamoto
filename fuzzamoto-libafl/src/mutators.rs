@@ -16,7 +16,9 @@ use libafl_bolts::{
 };
 use rand::RngCore;
 
-use crate::input::{IrInput, MutationStage};
+use crate::input::IrInput;
+#[cfg(feature = "mutation-trace")]
+use crate::input::MutationStage;
 
 /// Instruction limit for mutated IR programs
 const MAX_INSTRUCTIONS: usize = 4096;
@@ -51,7 +53,11 @@ where
     fn mutate(&mut self, _state: &mut S, input: &mut IrInput) -> Result<MutationResult, Error> {
         let result = match self.mutator.mutate(input.ir_mut(), &mut self.rng) {
             Ok(_) => {
-                input.record_trace(MutationStage::Mutator, self.name.to_string(), None);
+                #[cfg(feature = "mutation-trace")]
+                {
+                    let action = self.mutator.take_last_action();
+                    input.record_trace(MutationStage::Mutator, self.name.to_string(), action);
+                }
                 MutationResult::Mutated
             }
             _ => MutationResult::Skipped,
@@ -130,7 +136,12 @@ where
         }
 
         *input = input_clone;
-        input.record_trace(MutationStage::Splice, self.name.to_string(), None);
+        #[cfg(feature = "mutation-trace")]
+        input.record_trace(
+            MutationStage::Splice,
+            self.name.to_string(),
+            Some(format!("with {:?}", id)),
+        );
 
         Ok(MutationResult::Mutated)
     }
@@ -216,7 +227,12 @@ where
         }
 
         *input.ir_mut() = new_program;
-        input.record_trace(MutationStage::Generator, self.name.to_string(), None);
+        #[cfg(feature = "mutation-trace")]
+        input.record_trace(
+            MutationStage::Generator,
+            self.name.to_string(),
+            Some(format!("insert@{}", index)),
+        );
 
         Ok(MutationResult::Mutated)
     }

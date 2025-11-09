@@ -9,6 +9,10 @@ use libafl_bolts::{HasLen, ownedref::OwnedSlice};
 pub struct IrInput {
     ir: Program,
     #[serde(default)]
+    #[cfg_attr(
+        not(feature = "mutation-trace"),
+        serde(skip_serializing, skip_deserializing)
+    )]
     trace: Vec<MutationTraceEntry>,
 }
 
@@ -16,7 +20,7 @@ pub struct IrInput {
 pub struct MutationTraceEntry {
     pub stage: MutationStage,
     pub name: String,
-    pub detail: Option<String>, // reserved for future metadata (e.g., variable ids, seeds)
+    pub action: Option<String>, // reserved for future metadata (e.g., variable ids, seeds)
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, Hash)]
@@ -58,30 +62,51 @@ impl IrInput {
 
     #[allow(dead_code)]
     pub fn trace(&self) -> &[MutationTraceEntry] {
-        &self.trace
+        #[cfg(feature = "mutation-trace")]
+        {
+            &self.trace
+        }
+        #[cfg(not(feature = "mutation-trace"))]
+        {
+            &[]
+        }
     }
 
+    #[cfg(feature = "mutation-trace")]
     pub fn record_trace(
         &mut self,
         stage: MutationStage,
         name: impl Into<String>,
-        detail: impl Into<Option<String>>,
+        action: impl Into<Option<String>>,
     ) {
-        const MAX_TRACE_ENTRIES: usize = 64;
-        self.trace.push(MutationTraceEntry {
-            stage,
-            name: name.into(),
-            detail: detail.into(),
-        });
-        if self.trace.len() > MAX_TRACE_ENTRIES {
-            let excess = self.trace.len() - MAX_TRACE_ENTRIES;
-            self.trace.drain(0..excess);
+        #[cfg(feature = "mutation-trace")]
+        {
+            const MAX_TRACE_ENTRIES: usize = 64;
+            self.trace.push(MutationTraceEntry {
+                stage,
+                name: name.into(),
+                action: action.into(),
+            });
+            if self.trace.len() > MAX_TRACE_ENTRIES {
+                let excess = self.trace.len() - MAX_TRACE_ENTRIES;
+                self.trace.drain(0..excess);
+            }
+        }
+        #[cfg(not(feature = "mutation-trace"))]
+        {
+            let _ = stage;
+            let _ = name;
+            let _ = action;
         }
     }
 
     #[allow(dead_code)]
+    #[cfg(feature = "mutation-trace")]
     pub fn clear_trace(&mut self) {
-        self.trace.clear();
+        #[cfg(feature = "mutation-trace")]
+        {
+            self.trace.clear();
+        }
     }
 }
 

@@ -10,6 +10,8 @@ repository.workspace = true
 default = ["std"]
 std = []
 
+mutation-trace = []
+
 fuzz = ["compile_in_vm"]
 reproduce =  ["compile_in_vm"]
 

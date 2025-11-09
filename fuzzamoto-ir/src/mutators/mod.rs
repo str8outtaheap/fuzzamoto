@@ -21,6 +21,9 @@ pub type MutatorResult = Result<(), MutatorError>;
 pub trait Mutator<R: RngCore> {
     fn mutate(&mut self, program: &mut Program, rng: &mut R) -> MutatorResult;
     fn name(&self) -> &'static str;
+    fn take_last_action(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// `Splicer` is a `Mutator` that splices two programs together
