@@ -6,8 +6,8 @@ use fuzzamoto_ir::{
     CompactFilterQueryGenerator, GetDataGenerator, HeaderGenerator, InputMutator,
     InventoryGenerator, LargeTxGenerator, LongChainGenerator, OneParentOneChildGenerator,
     OperationMutator, Program, SendBlockGenerator, SendMessageGenerator, SingleTxGenerator,
-    TaprootKeyPathGenerator, TaprootLeafSelectMutator, TaprootScriptMutator,
-    TaprootScriptPathGenerator, TaprootTreeSpendGenerator, TxoGenerator, WitnessGenerator,
+    TaprootKeyPathGenerator, TaprootScriptPathGenerator, TaprootTreeSpendGenerator, TxoGenerator,
+    WitnessGenerator,
     cutting::CuttingMinimizer, instr_block::InstrBlockMinimizer, nopping::NoppingMinimizer,
 };
 
@@ -261,14 +261,6 @@ where
         //IrSpliceMutator::new(ConcatMutator::new(), rng.clone()),
         let (mutations, weights) = weighted_mutations![
             (2000.0, IrMutator::new(InputMutator::new(), rng.clone())),
-            (
-                50.0,
-                IrMutator::new(TaprootLeafSelectMutator::new(), rng.clone())
-            ),
-            (
-                50.0,
-                IrMutator::new(TaprootScriptMutator::new(), rng.clone())
-            ),
             (
                 1000.0,
                 IrMutator::new(OperationMutator::new(LibAflByteMutator::new()), rng.clone())
