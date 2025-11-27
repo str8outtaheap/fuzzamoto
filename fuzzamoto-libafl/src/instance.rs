@@ -6,8 +6,7 @@ use fuzzamoto_ir::{
     CompactFilterQueryGenerator, GetDataGenerator, HeaderGenerator, InputMutator,
     InventoryGenerator, LargeTxGenerator, LongChainGenerator, OneParentOneChildGenerator,
     OperationMutator, Program, SendBlockGenerator, SendMessageGenerator, SingleTxGenerator,
-    TaprootKeyPathGenerator, TaprootScriptPathGenerator, TaprootTreeSpendGenerator, TxoGenerator,
-    WitnessGenerator, cutting::CuttingMinimizer, instr_block::InstrBlockMinimizer,
+    TxoGenerator, WitnessGenerator, cutting::CuttingMinimizer, instr_block::InstrBlockMinimizer,
     nopping::NoppingMinimizer,
 };
 
@@ -297,27 +296,6 @@ where
                 20.0,
                 IrGenerator::new(
                     TxoGenerator::new(full_program_context.txos.clone()),
-                    rng.clone()
-                )
-            ),
-            (
-                20.0,
-                IrGenerator::new(
-                    TaprootKeyPathGenerator::new(full_program_context.taproot.txos.clone()),
-                    rng.clone()
-                )
-            ),
-            (
-                20.0,
-                IrGenerator::new(
-                    TaprootScriptPathGenerator::new(full_program_context.taproot.txos.clone()),
-                    rng.clone()
-                )
-            ),
-            (
-                20.0,
-                IrGenerator::new(
-                    TaprootTreeSpendGenerator::new(full_program_context.taproot.txos.clone()),
                     rng.clone()
                 )
             ),

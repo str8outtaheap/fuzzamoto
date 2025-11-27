@@ -7,8 +7,7 @@ use fuzzamoto_ir::{
     BloomFilterClearGenerator, BloomFilterLoadGenerator, CompactFilterQueryGenerator,
     FullProgramContext, Generator, GetDataGenerator, HeaderGenerator, InstructionContext,
     InventoryGenerator, LargeTxGenerator, LongChainGenerator, OneParentOneChildGenerator, Program,
-    ProgramBuilder, SendBlockGenerator, SendMessageGenerator, SingleTxGenerator,
-    TaprootKeyPathGenerator, TaprootScriptPathGenerator, TaprootTreeSpendGenerator, TxoGenerator,
+    ProgramBuilder, SendBlockGenerator, SendMessageGenerator, SingleTxGenerator, TxoGenerator,
     WitnessGenerator,
 };
 
@@ -213,11 +212,6 @@ fn all_generators(context: &FullProgramContext) -> Vec<Box<dyn Generator<ThreadR
         Box::new(LongChainGenerator::default()),
         Box::new(LargeTxGenerator::default()),
         Box::new(TxoGenerator::new(context.txos.clone())),
-        Box::new(TaprootKeyPathGenerator::new(context.taproot.txos.clone())),
-        Box::new(TaprootScriptPathGenerator::new(
-            context.taproot.txos.clone(),
-        )),
-        Box::new(TaprootTreeSpendGenerator::new(context.taproot.txos.clone())),
     ]
 }
 
