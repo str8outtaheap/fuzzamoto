@@ -59,13 +59,10 @@ impl Instruction {
             | Operation::SendTxNoWit
             | Operation::SendTx
             | Operation::LoadBytes(_)
-            | Operation::LoadTaprootTxo { .. }
+            | Operation::BuildTaprootKeypair { .. }
             | Operation::LoadTaprootAnnex { .. }
             | Operation::LoadTaprootLeafVersion(_)
             | Operation::BuildPayToTaproot
-            | Operation::TaprootTxoToSpendInfo
-            | Operation::TaprootTxoToKeypair
-            | Operation::TaprootTxoToTxo
             | Operation::TaprootScriptsUseAnnex
             | Operation::TaprootTxoUseAnnex => true,
             _ => false,
@@ -102,7 +99,7 @@ impl Instruction {
             | Operation::LoadPrivateKey(_)
             | Operation::LoadSigHashFlags(_)
             | Operation::LoadTxo { .. }
-            | Operation::LoadTaprootTxo { .. }
+            | Operation::BuildTaprootKeypair { .. }
             | Operation::LoadTaprootAnnex { .. }
             | Operation::LoadHeader { .. }
             | Operation::LoadAmount(..)
@@ -141,9 +138,6 @@ impl Instruction {
             | Operation::SendFilterLoad
             | Operation::SendFilterAdd
             | Operation::SendFilterClear
-            | Operation::TaprootTxoToSpendInfo
-            | Operation::TaprootTxoToKeypair
-            | Operation::TaprootTxoToTxo
             | Operation::TaprootScriptsUseAnnex
             | Operation::TaprootTxoUseAnnex
             | Operation::AddTapLeaf { .. }
@@ -169,7 +163,7 @@ impl Instruction {
             | Operation::EndBuildCoinbaseTx
             | Operation::BeginBuildCoinbaseTxOutputs
             | Operation::EndBuildCoinbaseTxOutputs => false,
-            Operation::BeginTaprootTree | Operation::EndTaprootTree => false,
+            Operation::BeginTaprootTree | Operation::EndTaprootTree { .. } => false,
         }
     }
 
