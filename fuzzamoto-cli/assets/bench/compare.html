@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Benchmark Comparison</title>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.29.1/plotly.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #222; background: #fafafa; }
+    h1 { margin-bottom: 8px; }
+    .chart { width: 100%; max-width: 1100px; height: 400px; margin: 0 0 32px 0; background: #fff; border-radius: 8px; }
+    #status { margin: 8px 0 24px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Benchmark Comparison</h1>
+  <div id="status">Loading...</div>
+  <div id="coverage" class="chart"></div>
+  <div id="corpus" class="chart"></div>
+  <script src="compare.js"></script>
+</body>
+</html>

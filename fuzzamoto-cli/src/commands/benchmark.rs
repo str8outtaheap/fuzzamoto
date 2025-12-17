@@ -23,22 +23,36 @@ use crate::error::{CliError, Result};
 
 const DEFAULT_FUZZER_PATH: &str = "target/release/fuzzamoto-libafl";
 
+// HTML/JS assets for visualization
+const RUN_REPORT_HTML: &str = include_str!("../../assets/bench/run.html");
+const RUN_REPORT_JS: &str = include_str!("../../assets/bench/run.js");
+const SUITE_REPORT_HTML: &str = include_str!("../../assets/bench/suite.html");
+const SUITE_REPORT_JS: &str = include_str!("../../assets/bench/suite_report.js");
+const COMPARE_REPORT_HTML: &str = include_str!("../../assets/bench/compare.html");
+const COMPARE_REPORT_JS: &str = include_str!("../../assets/bench/compare.js");
+
 pub struct BenchmarkCommand;
 
 impl BenchmarkCommand {
     pub fn execute(cmd: &BenchmarkCommands) -> Result<()> {
         match cmd {
-            BenchmarkCommands::Run { suite, output } => run_suite(suite, output),
+            BenchmarkCommands::Run {
+                suite,
+                output,
+                html,
+            } => run_suite(suite, output, *html),
             BenchmarkCommands::Compare {
                 baseline,
                 candidate,
                 output,
                 suite,
+                html,
             } => compare_runs(
                 baseline,
                 candidate,
                 output.as_ref().map(PathBuf::as_path),
                 *suite,
+                *html,
             ),
         }
     }
@@ -52,6 +66,12 @@ pub enum BenchmarkCommands {
         suite: PathBuf,
         #[arg(long, help = "Output directory for run artifacts")]
         output: PathBuf,
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Generate HTML reports with charts"
+        )]
+        html: bool,
     },
     /// Compare two benchmark run directories and report deltas
     Compare {
@@ -73,6 +93,12 @@ pub enum BenchmarkCommands {
             help = "Treat baseline/candidate as suite roots (compare mean curves across run_*)"
         )]
         suite: bool,
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Generate HTML comparison with charts"
+        )]
+        html: bool,
     },
 }
 
@@ -99,7 +125,7 @@ fn default_bench_snapshot_secs() -> u64 {
     30
 }
 
-fn run_suite(suite: &PathBuf, output: &PathBuf) -> Result<()> {
+fn run_suite(suite: &PathBuf, output: &PathBuf, write_html: bool) -> Result<()> {
     let mut file = File::open(suite)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
@@ -121,10 +147,10 @@ fn run_suite(suite: &PathBuf, output: &PathBuf) -> Result<()> {
 
     for run_idx in 0..config.runs {
         log::info!("Starting benchmark run {}/{}", run_idx + 1, config.runs);
-        run_single(&config, run_idx, output, suite)?;
+        run_single(&config, run_idx, output, suite, write_html)?;
     }
 
-    aggregate_suite(output)?;
+    aggregate_suite(output, write_html)?;
     Ok(())
 }
 
@@ -133,6 +159,7 @@ fn run_single(
     run_idx: usize,
     root: &Path,
     suite_path: &Path,
+    write_html: bool,
 ) -> Result<()> {
     let run_dir = root.join(format!("run_{run_idx:02}"));
     if run_dir.exists() {
@@ -199,36 +226,52 @@ fn run_single(
         thread::sleep(Duration::from_secs(1));
     }
 
-    aggregate_bench_stats(&run_dir, config, run_idx, suite_path, &fuzzer_path)?;
+    let merged = aggregate_bench_stats(&run_dir, config, run_idx, suite_path, &fuzzer_path)?;
     write_run_report(&run_dir)?;
+
+    if write_html {
+        write_run_report_html(&run_dir, &merged)?;
+    }
 
     Ok(())
 }
 
 /// Aggregate all run_* outputs into suite-level stats.
-fn aggregate_suite(root: &Path) -> Result<()> {
+fn aggregate_suite(root: &Path, write_html: bool) -> Result<()> {
     let suite_samples = load_suite_samples(root)?;
     let runs = count_run_dirs(root)?;
 
-    let suite_summary = if suite_samples.is_empty() {
-        SuiteSummary {
-            runs,
-            coverage_mean: None,
-            corpus_mean: None,
-        }
+    let (suite_summary, suite_series) = if suite_samples.is_empty() {
+        (
+            SuiteSummary {
+                runs,
+                coverage_mean: None,
+                corpus_mean: None,
+            },
+            None,
+        )
     } else {
-        let suite_series = bucket_mean_series(&suite_samples);
-        SuiteSummary {
-            runs,
-            coverage_mean: suite_series.coverage_mean.last().copied(),
-            corpus_mean: suite_series.corpus_mean.last().copied(),
-        }
+        let series = bucket_mean_series(&suite_samples);
+        (
+            SuiteSummary {
+                runs,
+                coverage_mean: series.coverage_mean.last().copied(),
+                corpus_mean: series.corpus_mean.last().copied(),
+            },
+            Some(series),
+        )
     };
 
     fs::write(
         root.join("suite_summary.json"),
         serde_json::to_vec_pretty(&suite_summary)?,
     )?;
+
+    if write_html {
+        if let Some(series) = suite_series {
+            write_suite_report_html(root, &series, &suite_summary)?;
+        }
+    }
 
     Ok(())
 }
@@ -277,7 +320,7 @@ fn aggregate_bench_stats(
     run_idx: usize,
     suite_path: &Path,
     fuzzer_path: &Path,
-) -> Result<()> {
+) -> Result<Vec<(String, BenchSample)>> {
     let bench_dir = run_dir.join("out").join("bench");
     if !bench_dir.exists() {
         return Err(CliError::FileNotFound(bench_dir.display().to_string()));
@@ -361,7 +404,7 @@ fn aggregate_bench_stats(
 
     let summary_path = run_dir.join("summary.json");
     fs::write(summary_path, serde_json::to_vec_pretty(&summary)?)?;
-    Ok(())
+    Ok(merged)
 }
 
 #[derive(Debug, Clone)]
@@ -460,10 +503,44 @@ struct Bucket {
 }
 
 /// Mean coverage/corpus curves across runs, time-bucketed.
+#[derive(Serialize)]
 struct SuiteSeries {
     elapsed: Vec<f64>,
     coverage_mean: Vec<f64>,
     corpus_mean: Vec<f64>,
+}
+
+/// Per-CPU time series for HTML charts
+#[derive(Serialize)]
+struct CpuSeries {
+    cpu: String,
+    elapsed: Vec<f64>,
+    coverage: Vec<f64>,
+    corpus: Vec<f64>,
+}
+
+/// Data written to report_data.json for run HTML
+#[derive(Serialize)]
+struct RunReportData {
+    series: Vec<CpuSeries>,
+    summary: BenchSummary,
+}
+
+/// Data written to suite_report_data.json
+#[derive(Serialize)]
+struct SuiteReportData {
+    suite_series: SuiteSeries,
+    suite_summary: SuiteSummary,
+}
+
+/// Data written to compare_data.json
+#[derive(Serialize)]
+struct CompareData {
+    mode: &'static str, // "run" or "suite"
+    baseline_label: String,
+    candidate_label: String,
+    baseline: SuiteSeries,
+    candidate: SuiteSeries,
 }
 
 /// Load all run_* stats.csv files under a suite root and return per-CPU samples.
@@ -563,6 +640,125 @@ fn bucket_mean_series(samples: &[(String, BenchSample)]) -> SuiteSeries {
     suite_series
 }
 
+/// Group samples by CPU into per-CPU time series for charts
+fn group_samples_by_cpu(samples: &[(String, BenchSample)]) -> Vec<CpuSeries> {
+    let mut cpu_map: BTreeMap<String, Vec<&BenchSample>> = BTreeMap::new();
+    for (cpu, sample) in samples {
+        cpu_map.entry(cpu.clone()).or_default().push(sample);
+    }
+
+    cpu_map
+        .into_iter()
+        .map(|(cpu, mut samples)| {
+            samples.sort_by(|a, b| a.elapsed_s.partial_cmp(&b.elapsed_s).unwrap());
+            CpuSeries {
+                cpu,
+                elapsed: samples.iter().map(|s| s.elapsed_s).collect(),
+                coverage: samples.iter().map(|s| s.coverage_pct).collect(),
+                corpus: samples.iter().map(|s| s.corpus_size as f64).collect(),
+            }
+        })
+        .collect()
+}
+
+/// Write HTML report for a single run
+fn write_run_report_html(run_dir: &Path, samples: &[(String, BenchSample)]) -> Result<()> {
+    let summary_path = run_dir.join("summary.json");
+    let summary: BenchSummary = if summary_path.exists() {
+        serde_json::from_slice(&fs::read(&summary_path)?)?
+    } else {
+        BenchSummary::default()
+    };
+
+    let series = group_samples_by_cpu(samples);
+    let data = RunReportData { series, summary };
+
+    fs::write(run_dir.join("report.html"), RUN_REPORT_HTML)?;
+    fs::write(run_dir.join("run.js"), RUN_REPORT_JS)?;
+    fs::write(
+        run_dir.join("report_data.json"),
+        serde_json::to_vec_pretty(&data)?,
+    )?;
+
+    log::info!(
+        "Wrote HTML report to {}",
+        run_dir.join("report.html").display()
+    );
+    Ok(())
+}
+
+/// Write HTML report for a suite
+fn write_suite_report_html(
+    root: &Path,
+    series: &SuiteSeries,
+    summary: &SuiteSummary,
+) -> Result<()> {
+    let data = SuiteReportData {
+        suite_series: SuiteSeries {
+            elapsed: series.elapsed.clone(),
+            coverage_mean: series.coverage_mean.clone(),
+            corpus_mean: series.corpus_mean.clone(),
+        },
+        suite_summary: SuiteSummary {
+            runs: summary.runs,
+            coverage_mean: summary.coverage_mean,
+            corpus_mean: summary.corpus_mean,
+        },
+    };
+
+    fs::write(root.join("suite_report.html"), SUITE_REPORT_HTML)?;
+    fs::write(root.join("suite_report.js"), SUITE_REPORT_JS)?;
+    fs::write(
+        root.join("suite_report_data.json"),
+        serde_json::to_vec_pretty(&data)?,
+    )?;
+
+    log::info!(
+        "Wrote suite HTML report to {}",
+        root.join("suite_report.html").display()
+    );
+    Ok(())
+}
+
+/// Write HTML comparison report
+fn write_compare_report_html(
+    output_dir: &Path,
+    baseline: &SuiteSeries,
+    candidate: &SuiteSeries,
+    baseline_label: &str,
+    candidate_label: &str,
+    mode: &'static str,
+) -> Result<()> {
+    let data = CompareData {
+        mode,
+        baseline_label: baseline_label.to_string(),
+        candidate_label: candidate_label.to_string(),
+        baseline: SuiteSeries {
+            elapsed: baseline.elapsed.clone(),
+            coverage_mean: baseline.coverage_mean.clone(),
+            corpus_mean: baseline.corpus_mean.clone(),
+        },
+        candidate: SuiteSeries {
+            elapsed: candidate.elapsed.clone(),
+            coverage_mean: candidate.coverage_mean.clone(),
+            corpus_mean: candidate.corpus_mean.clone(),
+        },
+    };
+
+    fs::write(output_dir.join("compare.html"), COMPARE_REPORT_HTML)?;
+    fs::write(output_dir.join("compare.js"), COMPARE_REPORT_JS)?;
+    fs::write(
+        output_dir.join("compare_data.json"),
+        serde_json::to_vec_pretty(&data)?,
+    )?;
+
+    log::info!(
+        "Wrote comparison HTML to {}",
+        output_dir.join("compare.html").display()
+    );
+    Ok(())
+}
+
 fn write_run_report(run_dir: &Path) -> Result<()> {
     let summary_path = run_dir.join("summary.json");
     if !summary_path.exists() {
@@ -619,6 +815,7 @@ fn compare_runs(
     candidate_dir: &Path,
     output: Option<&Path>,
     suite_level: bool,
+    write_html: bool,
 ) -> Result<()> {
     let mut report = String::new();
     writeln!(
@@ -641,6 +838,34 @@ fn compare_runs(
             (baseline.corpus_mean, candidate.corpus_mean)
         {
             write_diff_line_f64(&mut report, "Mean corpus size", base_corpus, cand_corpus);
+        }
+
+        // Generate HTML comparison if requested
+        if write_html {
+            let baseline_samples = load_suite_samples(baseline_dir)?;
+            let candidate_samples = load_suite_samples(candidate_dir)?;
+
+            if !baseline_samples.is_empty() && !candidate_samples.is_empty() {
+                let baseline_series = bucket_mean_series(&baseline_samples);
+                let candidate_series = bucket_mean_series(&candidate_samples);
+                let baseline_label = baseline_dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("baseline");
+                let candidate_label = candidate_dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("candidate");
+
+                write_compare_report_html(
+                    baseline_dir,
+                    &baseline_series,
+                    &candidate_series,
+                    baseline_label,
+                    candidate_label,
+                    "suite",
+                )?;
+            }
         }
     } else {
         let baseline = load_summary(baseline_dir)?;
@@ -670,6 +895,39 @@ fn compare_runs(
             baseline.final_corpus_size as u64,
             candidate.final_corpus_size as u64,
         );
+
+        // Generate HTML comparison if requested
+        if write_html {
+            let baseline_stats = baseline_dir.join("stats.csv");
+            let candidate_stats = candidate_dir.join("stats.csv");
+
+            if baseline_stats.exists() && candidate_stats.exists() {
+                let baseline_samples = parse_stats_csv(&fs::read_to_string(&baseline_stats)?);
+                let candidate_samples = parse_stats_csv(&fs::read_to_string(&candidate_stats)?);
+
+                if !baseline_samples.is_empty() && !candidate_samples.is_empty() {
+                    let baseline_series = bucket_mean_series(&baseline_samples);
+                    let candidate_series = bucket_mean_series(&candidate_samples);
+                    let baseline_label = baseline_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("baseline");
+                    let candidate_label = candidate_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("candidate");
+
+                    write_compare_report_html(
+                        baseline_dir,
+                        &baseline_series,
+                        &candidate_series,
+                        baseline_label,
+                        candidate_label,
+                        "run",
+                    )?;
+                }
+            }
+        }
     }
 
     report.push('\n');
@@ -842,7 +1100,7 @@ mod tests {
         assert_eq!(summary.total_execs, 120_000);
         assert_eq!(summary.final_corpus_size, 150);
 
-        aggregate_suite(&root).unwrap();
+        aggregate_suite(&root, false).unwrap();
         let suite_bytes = fs::read(root.join("suite_summary.json")).unwrap();
         let suite: SuiteSummary = serde_json::from_slice(&suite_bytes).unwrap();
         assert_eq!(suite.runs, 1);
@@ -853,7 +1111,7 @@ mod tests {
     fn aggregate_suite_writes_summary_even_without_samples() {
         let root = make_temp_dir("fuzzamoto-suite-empty");
         fs::create_dir_all(root.join("run_00")).unwrap();
-        aggregate_suite(&root).unwrap();
+        aggregate_suite(&root, false).unwrap();
 
         let suite_bytes = fs::read(root.join("suite_summary.json")).unwrap();
         let suite: SuiteSummary = serde_json::from_slice(&suite_bytes).unwrap();
@@ -898,7 +1156,7 @@ mod tests {
         .unwrap();
 
         let out = root.join("compare.md");
-        compare_runs(&base, &cand, Some(&out), false).unwrap();
+        compare_runs(&base, &cand, Some(&out), false, false).unwrap();
         let report = fs::read_to_string(&out).unwrap();
         assert!(report.contains("Benchmark Comparison"));
         assert!(report.contains("Total execs: 135000"));
